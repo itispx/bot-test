@@ -36,16 +36,19 @@ embed_model = OpenAIEmbeddings(model="text-embedding-ada-002")
 reader = PyPDF2.PdfReader('example.pdf')
 
 for page in reader.pages:
-    data = page.extract_text()
+    page_text = page.extract_text()
 
-    query_vector = embed_model.embed_documents(data)
+    paragraphs = page_text.split("\n")
 
-    data_to_insert = []
+    for paragraph in paragraphs:
+        query_vector = embed_model.embed_documents(paragraph)
+        
+        data_to_insert = []
+        
+        for vector in query_vector:
+            id = str(uuid.uuid4())
+            data_to_insert.append((id, vector))
 
-    for vector in query_vector:
-        id = uuid.uuid4()
-        data_to_insert.append((id, vector))
-    
-    index.upsert(vectors=data_to_insert)
+        index.upsert(vectors=data_to_insert)
 
 index.close()

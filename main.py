@@ -49,20 +49,17 @@ while True:
     if query in ['quit', 'q', 'exit']:
         sys.exit()
 
-    print(query)
-
     embed_model = OpenAIEmbeddings(model="text-embedding-ada-002")
     query_vector = embed_model.embed_documents(query)
 
-    print(query_vector[0])
-
-    query_results = index.query(queries=query_vector[0], top_k=3)
-
-    print(query_results)
+    query_results = index.query(
+      vector=query_vector[0],
+      top_k=3,
+    )    
 
     context=""
 
-    content = "Responda a query baseada no contexto passado: Query: "+query+"\nContexto: "+context
+    content = "Responda a mensagem baseada no contexto passado: Mensagem: "+query+"\nContexto: "+context
 
     prompt = HumanMessage(content=content)
 

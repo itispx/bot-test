@@ -22,25 +22,7 @@ pinecone.init(
     environment="gcp-starter"
 )
 
-if index_name not in pinecone.list_indexes():
-    pinecone.create_index(
-        index_name,
-        dimension=1536,
-        metric='cosine'
-    )
-    # wait for index to finish initialization
-    while not pinecone.describe_index(index_name).status['ready']:
-        time.sleep(1)
-
 index = pinecone.Index(index_name)
-
-context = ""
-
-# creating a pdf reader object
-reader = PyPDF2.PdfReader('example.pdf')
-
-for page in reader.pages:
-    context = context + page.extract_text()
 
 # init chat
 chat = ChatOpenAI(
@@ -66,6 +48,19 @@ while True:
 
     if query in ['quit', 'q', 'exit']:
         sys.exit()
+
+    print(query)
+
+    embed_model = OpenAIEmbeddings(model="text-embedding-ada-002")
+    query_vector = embed_model.embed_documents(query)
+
+    print(query_vector[0])
+
+    query_results = index.query(queries=query_vector[0], top_k=3)
+
+    print(query_results)
+
+    context=""
 
     content = "Responda a query baseada no contexto passado: Query: "+query+"\nContexto: "+context
 

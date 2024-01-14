@@ -1,6 +1,5 @@
 import os
 import time
-import sys
 
 import uuid
 import PyPDF2
@@ -22,7 +21,7 @@ pinecone.init(
 if index_name not in pinecone.list_indexes():
     pinecone.create_index(
         index_name,
-        dimension=193536,
+        dimension=1536,
         metric='cosine'
     )
     # wait for index to finish initialization
@@ -33,40 +32,39 @@ index = pinecone.Index(index_name)
 
 embed_model = OpenAIEmbeddings(model="text-embedding-ada-002")
 
-def read_and_embbed(file_path:str):
+def read_and_embbed(file_path: str):
     path_parts = file_path.split(os.sep)
 
     directory_name = path_parts[-2]
 
     reader = PyPDF2.PdfReader(file_path)
 
-    # for page in reader.pages:
-        # page_text = page.extract_text()
-    page_text = "Casa adaptada para idosos: como organizar a sua Uma casa segura e confortável é fundamental para o bem-estar ao longo da vida."
-    split_text = page_text.replace("\n", "").split()
+    for page in reader.pages:
+        page_text = page.extract_text()
+        split_text = page_text.replace("\n", "").split()
 
-    batched_text = []
+        batched_text = []
 
-    batch_size = 50
+        batch_size = 50
 
-    for i in range(0, len(split_text), batch_size):
-        batched_text.append(split_text[i:i+batch_size])
+        for i in range(0, len(split_text), batch_size):
+            batched_text.append(split_text[i:i+batch_size])
 
-    for text_array in batched_text:
-        text = ' '.join(text_array)
-        id = str(uuid.uuid4())
-        query_vector = embed_model.embed_documents(text)
-        file_name = os.path.basename(file_path)
-        metadata = {
-            "text": text, 
-            "directory": directory_name,
-            "file_name": file_name
-        }
+        for text_array in batched_text:
+            text = ' '.join(text_array)
+            id = str(uuid.uuid4())
+            vector = embed_model.embed_documents(text)
+            file_name = os.path.basename(file_path)
+            metadata = {
+                "text": text, 
+                "directory": directory_name,
+                "file_name": file_name
+            }
 
-        data_to_insert = (id, query_vector, metadata)
+            print(file_name)
 
-        index.upsert(vectors=[data_to_insert])
-
+            index.upsert(vectors=[(id, vector[0], metadata)])
+        
 def read_folder(directory):
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)

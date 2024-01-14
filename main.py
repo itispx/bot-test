@@ -1,21 +1,21 @@
 import os
 import sys
-import time
 
-import PyPDF2
 from dotenv import load_dotenv
 import pinecone
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.vectorstores import Pinecone
 from langchain.schema import (
     SystemMessage,
     HumanMessage,
     AIMessage
 )
 
-load_dotenv()
+load_dotenv(".env")
+load_dotenv(".env.shared")
 
 # init pinecone
-index_name = "bot-test-index"
+index_name = os.getenv("PINECONE_INDEX_NAME")
 
 pinecone.init(
     api_key=os.getenv("PINECONE_API_KEY"),
@@ -31,9 +31,16 @@ chat = ChatOpenAI(
 )
 
 initial_prompt = """
-    Você é uma assistente virtual de uma empresa chamada Crédito Real chamada Chris, do ramo imobiliário.
+    Você é uma assistente virtual chamada Chris, da empresa Crédito Real, do ramo imobiliário.
     Seja educada e pontual, dê respostas elaboradas e claras.
     Quando suas respostas forem muito longas, resuma elas de modo objetivo.
+
+    Para cada input, você irá receber a seguinte estrutura:
+
+    Mensagem: [Input do usuário]
+    Contexto: [Contexto fornecido]
+
+    Se a mensagem for uma saudação simples como 'oi', 'como está?' ou 'tudo bem?', desconsidere o contexto e responda de forma direta. Se a mensagem solicitar informações ou discutir um tópico que possa se beneficiar do contexto fornecido, integre esse contexto de forma relevante na sua resposta.
     """
 
 messages = [
@@ -50,23 +57,31 @@ while True:
         sys.exit()
 
     embed_model = OpenAIEmbeddings(model="text-embedding-ada-002")
+
     query_vector = embed_model.embed_documents(query)
 
     query_results = index.query(
-      vector=query_vector[0],
+      vector=query_vector,
       top_k=3,
-    )    
+      include_metadata=True,
+      include_values=False, 
+    )
 
-    context=""
+    context = ""
 
-    content = "Responda a mensagem baseada no contexto passado: Mensagem: "+query+"\nContexto: "+context
+    for match in query_results['matches']:
+        print(match['score'])
+        print(match['metadata']['file_name'])
+        context += match['metadata']['text'] + "\n"
+
+    content = "Mensagem: "+query+"\nContexto: "+context
 
     prompt = HumanMessage(content=content)
 
     messages.append(prompt)
 
     res = chat.invoke(messages)
-    print("\nChatGPT: ",res.content)
+    print("\nChris: ", res.content)
 
     gpt_response = AIMessage(content=res.content)
 

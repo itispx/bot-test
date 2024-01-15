@@ -45,7 +45,7 @@ def read_and_embbed(file_path: str):
 
         batched_text = []
 
-        batch_size = 50
+        batch_size = 100
 
         for i in range(0, len(split_text), batch_size):
             batched_text.append(split_text[i:i+batch_size])
@@ -63,7 +63,7 @@ def read_and_embbed(file_path: str):
 
             print(file_name)
 
-            index.upsert(vectors=[(id, vector[0], metadata)])
+            index.upsert(vectors=[(id, vector, metadata)])
         
 def read_folder(directory):
     for filename in os.listdir(directory):

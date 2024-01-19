@@ -33,44 +33,6 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-def read_and_embbed(file_path: str):
-    path_parts = file_path.split(os.sep)
-
-    directory_name = path_parts[-2]
-
-    reader = PyPDF2.PdfReader(file_path)
-
-    for page in reader.pages:
-        page_text = page.extract_text()
-        split_text = page_text.replace("\n", "").split()
-
-        batched_text = []
-        batch_text_size = 300
-
-        for i in range(0, len(split_text), batch_text_size):
-            batched_text.append(split_text[i:i+batch_text_size])
-
-        for text_array in batched_text:
-            text = ' '.join(text_array)
-
-            embedding_response = client.embeddings.create(
-                input=text,
-                model="text-embedding-ada-002"
-            )
-            vector = embedding_response.data[0].embedding
-            id = str(uuid.uuid4())
-            file_name = os.path.basename(file_path)
-            metadata = {
-                "text": text, 
-                "directory": directory_name,
-                "file_name": file_name
-            }
-
-            index.upsert(vectors=[(id, vector, metadata)])
-
-            print(file_name)
-
-
 def embed_and_upload(file_path: str, text: str):
     split_text = text.split()
     batched_text = []

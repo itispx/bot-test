@@ -1,43 +1,84 @@
 import os
 import sys
+import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from langchain_openai import ChatOpenAI
-from langchain.schema import (
-    SystemMessage,
-    HumanMessage,
-    AIMessage
-)
+from pinecone import Pinecone, PodSpec
 
 load_dotenv(".env")
 load_dotenv(".env.shared")
+
+index_name = os.getenv("PINECONE_INDEX_NAME")
+
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+
+if index_name not in pc.list_indexes().names():
+    pc.create_index(
+        name=index_name,
+        dimension=1536,
+        metric="cosine",
+        spec = PodSpec(environment="gcp-starter")
+    )
+    # wait for index to finish initialization
+    while not pc.describe_index(index_name).status['ready']:
+        time.sleep(1)
+
+index = pc.Index(index_name)
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
 )
 
 initial_prompt = """
-    Você é uma assistente virtual chamada Chris, da empresa Crédito Real, do ramo imobiliário.
-    Seja educada e pontual, dê respostas elaboradas e claras.
-    Quando suas respostas forem muito longas, resuma elas de modo objetivo.
-    Limite suas respostas à 260 caracteres.
+    Prompt para Chris, a assistente virtual da Crédito Real:
+
+    Utilize as informações fornecidas pelo usuário e os três contextos anexos para responder de forma educada, clara e objetiva.
+    Limite sua resposta a 1024 caracteres.
+    Lembre-se de manter a confidencialidade dos contextos e apresentar uma resposta que pareça independente e autônoma.
+    Utilize os contextos apenas quando necessário para enriquecer a resposta.
+    Para saudações simples ou perguntas gerais, ofereça uma resposta cordial sem incluir detalhes dos contextos.
     """
 
+messages = [{
+    "role": "system",
+    "content": initial_prompt,
+}]
 
+def chat_bot(prompt):
+    embedding_response = client.embeddings.create(
+        input=prompt,
+        model="text-embedding-ada-002"
+    )
+    vector = embedding_response.data[0].embedding
+    vector_search = index.query(vector=vector, top_k=3, include_metadata=True)
 
-def chat_with_model(prompt):
-    print(prompt)
+    content = f"Input: {prompt}"
 
-    response = client.completions.create(
-      model=os.getenv("OPENAI_COMPLETION_MODEL"),
-      prompt=prompt,
-      max_tokens=260,
-      temperature=0
+    for i, match in enumerate(vector_search.matches):
+        print(match.metadata['directory'], "-", match.metadata['file_name'], "|", match.score)
+
+        content += f"\nContexto {i}: {match.metadata['text']}"
+
+    messages.append({
+        "role": "user",
+        "content": content
+    })
+
+    response = client.chat.completions.create(
+      model="gpt-4-1106-preview",
+      messages=messages,
+      temperature=0,
     )
 
-    print(response)
-    return response.choices[0].text
+    text = response.choices[0].message.content
+    
+    messages.append({
+        "role": "assistant",
+        "content": text
+    })
+
+    return text
 
 query = None
 
@@ -48,7 +89,7 @@ while True:
     if query.lower() in ['quit', 'q', 'exit']:
         sys.exit()
 
-    model_response = chat_with_model(query)
+    model_response = chat_bot(query)
     
     print("\nChris: ", model_response)
 

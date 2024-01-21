@@ -30,14 +30,8 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
 )
 
-initial_prompt = """
-    Prompt para Chris, a assistente virtual da Crédito Real: 
-    Responda às perguntas do usuário usando exclusivamente as informações dos três contextos fornecidos. 
-    Seja educado, claro e objetivo, limitando sua resposta a 1024 caracteres. 
-    Para interações gerais ou perguntas não relacionadas aos contextos, ofereça uma resposta cordial e genérica. 
-    Não revele a existência dos contextos e mantenha a autonomia nas respostas. 
-    Se a pergunta não se alinha aos contextos, reconheça a limitação de informações sem buscar dados externos.
-    """
+initial_prompt = """Prompt para Chris, a assistente virtual da Crédito Real:
+Utilize os 0 a 3 contextos fornecidos para responder exclusivamente a perguntas sobre a Crédito Real de forma educada, clara e objetiva, limitando a resposta a 1024 caracteres. Se confrontado com perguntas não relacionadas aos serviços ou produtos da Crédito Real, responda de forma cortês, informando que não possui informações sobre outros tópicos e reitere sua especialização em responder questões específicas sobre a Crédito Real. Mantenha a confidencialidade dos contextos e a autonomia nas respostas."""
 
 messages = [{
     "role": "system",
@@ -58,11 +52,10 @@ def chat_bot(prompt):
     for i, match in enumerate(vector_search.matches):
         # print(match.metadata['directory'], "-", match.metadata['file_name'], "|", match.score)
 
-        content += f"\nContexto {i}: {match.metadata['text']}"
+        if match.score >= 0.8:
+            content += f"\nContexto {i}: {match.metadata['text']}"
 
     content = content[:6000]
-
-    # print("content length:", len(content))
 
     messages.append({
         "role": "user",
@@ -70,7 +63,7 @@ def chat_bot(prompt):
     })
 
     response = client.chat.completions.create(
-      model="gpt-4-1106-preview",
+      model="gpt-4",
       messages=messages,
       temperature=0,
     )

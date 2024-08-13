@@ -89,7 +89,7 @@ while True:
 
     model_response = chat_bot(query)
     
-    print("\nChris: ", model_response)
+    print("\nCris: ", model_response)
 
     query = None
     

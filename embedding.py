@@ -2,15 +2,11 @@ import os
 import time
 
 import uuid
-import PyPDF2
 from openai import OpenAI
 from dotenv import load_dotenv
-from pinecone import Pinecone, PodSpec
-from bs4 import BeautifulSoup
-import docx2txt
+from pinecone import Pinecone, ServerlessSpec
 
 load_dotenv(".env")
-load_dotenv(".env.shared")
 
 index_name = os.getenv("PINECONE_INDEX_NAME")
 
@@ -21,7 +17,10 @@ if index_name not in pc.list_indexes().names():
         name=index_name,
         dimension=1536,
         metric="cosine",
-        spec = PodSpec(environment="gcp-starter")
+        spec = ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        )
     )
     # wait for index to finish initialization
     while not pc.describe_index(index_name).status['ready']:
@@ -33,76 +32,53 @@ client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
+def estimate_token_count(text: str) -> int:
+    words = text.split()
+    return int(len(words) * 1.5)  # Rough estimation: 1.5 tokens per word
+
 def embed_and_upload(file_path: str, text: str):
-    split_text = text.split()
-    batched_text = []
-    batch_text_size = 600
+    try:
+        split_text = text.split()
+        batched_text = []
+        batch_text_size = 500  # Adjusted to be safer within the token limit
 
-    directory_name = file_path.split(os.sep)[-2]
-    file_name = os.path.basename(file_path)
+        directory_name = file_path.split(os.sep)[-2]
+        file_name = os.path.basename(file_path)
 
-    for i in range(0, len(split_text), batch_text_size):
-        batched_text.append(split_text[i:i+batch_text_size])
-    
-    for text_array in batched_text:
-        text = ' '.join(text_array)
+        for i in range(0, len(split_text), batch_text_size):
+            text_batch = split_text[i:i+batch_text_size]
 
-        embedding_response = client.embeddings.create(
-            input=text,
-            model="text-embedding-ada-002"
-        )
-        vector = embedding_response.data[0].embedding
-        id = str(uuid.uuid4())
-        metadata = {
-            "text": text, 
-            "directory": directory_name,
-            "file_name": file_name
-        }
+            if estimate_token_count(' '.join(text_batch)) > 8000:  # Ensure we stay under the limit
+                batch_text_size = int(batch_text_size * 0.8)  # Reduce batch size and retry
+                continue
+            
+            batched_text.append(text_batch)
 
-        index.upsert(vectors=[(id, vector, metadata)])
+        for text_array in batched_text:
+            text = ' '.join(text_array)
 
-        print(file_name)
+            embedding_response = client.embeddings.create(
+                input=text,
+                model="text-embedding-ada-002"
+            )
+            vector = embedding_response.data[0].embedding  # Accessing the embedding correctly
+            id = str(uuid.uuid4())
+            metadata = {
+                "text": text, 
+                "directory": directory_name,
+                "file_name": file_name
+            }
 
-def from_html(file_path: str):
-    f = open(file_path, encoding="utf-8")     
-    soup = BeautifulSoup(f, features="html.parser")
+            # Upload the embedding to Pinecone
+            index.upsert(vectors=[(id, vector, metadata)])
 
-    body = soup.find("body")
+            print(f"uploaded embedding for file: {file_name}, batch size: {len(text_array)} words")
+    except Exception:
+        pass
 
-    for script in body(["script", "style", "ul"]):
-        script.extract()    # rip it out
-    
-    text = body.get_text().replace("\n", "")
-    
-    split = "deixe um comentário" # delete everything after this
-    delete = ["FacebookTwitter", "Copyright © 2023. Desenvolvido por API.", "Baixe Nosso Aplicativo", "Siga a Imóveis Crédito Real", "Categorias"]
-
-    text = text.split(split, 1)[0]
-
-    for i in delete:
-        text = text.replace(i, "")
-
-    return text
-
-def from_pdf(file_path: str):
-    text = ""
-
-    reader = PyPDF2.PdfReader(file_path)
-
-    for page in reader.pages:
-        text += page.extract_text().replace("\n", "")
-
-    return text
-
-def from_docx(file_path: str):
-    with open(file_path, 'rb') as infile:
-            text = docx2txt.process(infile)
-            text = text.replace("\n", "")
-
-            return text
 
 def from_text(file_path: str):
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         lines = f.readlines()
 
         text = "".join(lines)
@@ -117,12 +93,6 @@ def extract_text(file_path: str):
     text = ""
 
     match extension:
-        case ".html":
-            text = from_html(file_path)
-        case ".pdf":
-            text = from_pdf(file_path)
-        case ".docx":
-            text = from_docx(file_path)
         case ".txt":
             text = from_text(file_path)
         case _:
@@ -131,6 +101,7 @@ def extract_text(file_path: str):
     embed_and_upload(file_path, text)
 
 def read_folder(directory: str):
+
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
 
